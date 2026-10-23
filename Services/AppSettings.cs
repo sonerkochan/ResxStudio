@@ -9,6 +9,12 @@ namespace ResxStudio.Services;
 public sealed class AppSettings
 {
     public string? LastFile { get; set; }
+
+    /// <summary>
+    /// Set while a file is being opened and cleared once it's on screen. If it's still set at the
+    /// next launch, opening crashed or hung, so the file isn't reopened automatically.
+    /// </summary>
+    public string? OpeningFile { get; set; }
     public List<string> HiddenLanguages { get; set; } = new();
 
     /// <summary>Language of the default .resx file, sent to the translation service as the source.</summary>

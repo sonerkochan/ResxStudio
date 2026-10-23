@@ -108,6 +108,16 @@ If your project has a `Translations.Designer.cs`, Visual Studio regenerates it o
 the .resx changes inside VS. After adding or renaming keys here, right-click the .resx
 and choose **Run Custom Tool**.
 
+## If something goes wrong
+
+- Everything the app does at startup is written to `%AppData%\ResxStudio\log.txt`.
+  A watchdog adds a `FREEZE:` line with the last step if the window stops responding
+  for 8 seconds. Send that file along with any bug report.
+- Hold **Shift** while starting the app to skip reopening the last file.
+- If opening a file crashed or froze last time, it isn't reopened automatically.
+- Files are read on a background thread with a loading screen, so the window stays
+  responsive while a large set opens.
+
 ## Project layout
 
 ```

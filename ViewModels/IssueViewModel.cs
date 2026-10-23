@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ResxStudio.Services;
 
 namespace ResxStudio.ViewModels;
@@ -13,7 +14,20 @@ public sealed class IssueViewModel
     public string Key => Issue.Key;
     public string Location => Issue.Location;
     public string Message => Issue.Message;
+}
 
-    /// <summary>Errors and warnings start expanded; long informational lists start collapsed.</summary>
-    public bool ExpandByDefault => Issue.Severity != IssueSeverity.Info;
+/// <summary>A problem type in the left column of the Problems panel.</summary>
+public sealed class ProblemCategoryViewModel
+{
+    public ProblemCategoryViewModel(string name, IssueSeverity severity, IReadOnlyList<IssueViewModel> issues)
+    {
+        Name = name;
+        Severity = severity;
+        Issues = issues;
+    }
+
+    public string Name { get; }
+    public IssueSeverity Severity { get; }
+    public IReadOnlyList<IssueViewModel> Issues { get; }
+    public int Count => Issues.Count;
 }

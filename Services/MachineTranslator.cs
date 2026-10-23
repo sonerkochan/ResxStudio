@@ -42,7 +42,7 @@ public sealed class MachineTranslator
         var tokens = TokenProtector.FindTokens(core, _protectedTerms);
         var masked = TokenProtector.Mask(core, tokens);
 
-        // Nothing but placeholders and names (e.g. "My App"): keep as-is, no API call needed.
+        // Nothing but placeholders and names (e.g. "My app"): keep as-is, no API call needed.
         if (!TokenProtector.HasTranslatableText(masked)) return line;
 
         var translated = await TranslateLongAsync(masked, source, target, ct);

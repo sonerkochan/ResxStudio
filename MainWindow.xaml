@@ -214,51 +214,47 @@
                             </DockPanel>
                         </Border>
 
-                        <ListBox ItemsSource="{Binding IssuesView}" SelectedItem="{Binding SelectedIssue}"
-                                 BorderThickness="0" Background="Transparent"
-                                 ItemContainerStyle="{StaticResource IssueItem}"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 VirtualizingPanel.IsVirtualizing="True"
-                                 VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                                 VirtualizingPanel.VirtualizationMode="Recycling">
-                            <ListBox.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.ContainerStyle>
-                                        <Style TargetType="GroupItem">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="GroupItem">
-                                                        <Expander IsExpanded="{Binding Items[0].ExpandByDefault, Mode=OneTime}"
-                                                                  Margin="8,4,8,0">
-                                                            <Expander.Header>
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
-                                                                    <TextBlock Text="{Binding ItemCount}" Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"/>
-                                                                </StackPanel>
-                                                            </Expander.Header>
-                                                            <ItemsPresenter/>
-                                                        </Expander>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Style>
-                                    </GroupStyle.ContainerStyle>
-                                </GroupStyle>
-                            </ListBox.GroupStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <DockPanel ToolTip="{Binding Message}">
-                                        <Ellipse DockPanel.Dock="Left" Style="{StaticResource SeverityDot}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                        <TextBlock DockPanel.Dock="Left" Text="{Binding Key}" Width="280" Margin="0,0,12,0"
-                                                   FontFamily="{StaticResource MonoFont}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock DockPanel.Dock="Left" Text="{Binding Location}" Width="150" Margin="0,0,12,0"
-                                                   Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"/>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="270"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                                <ListBox ItemsSource="{Binding ProblemCategories}" SelectedItem="{Binding SelectedCategory}"
+                                         Style="{StaticResource SideList}" ItemContainerStyle="{StaticResource SideListItem}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Ellipse DockPanel.Dock="Left" Style="{StaticResource SeverityDot}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat=N0}" Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"/>
+                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+
+                            <ListBox Grid.Column="1" ItemsSource="{Binding VisibleIssues}" SelectedItem="{Binding SelectedIssue}"
+                                     BorderThickness="0" Background="Transparent"
+                                     ItemContainerStyle="{StaticResource IssueItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel ToolTip="{Binding Message}">
+                                            <TextBlock DockPanel.Dock="Left" Text="{Binding Key}" Width="280" Margin="0,0,12,0"
+                                                       FontFamily="{StaticResource MonoFont}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBlock DockPanel.Dock="Left" Text="{Binding Location}" Width="150" Margin="0,0,12,0"
+                                                       Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
                     </DockPanel>
                 </Grid>
 
@@ -343,13 +339,29 @@
 
             <!-- Empty state -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
-                        Visibility="{Binding IsProjectLoaded, Converter={StaticResource InverseBoolToVis}}">
+                        Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVis}}">
+                <Border Background="{StaticResource NoticeBrush}" BorderBrush="{StaticResource NoticeBorderBrush}"
+                        BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,24"
+                        Visibility="{Binding StartupNotice, Converter={StaticResource NotNullToVis}}">
+                    <TextBlock Text="{Binding StartupNotice}" TextWrapping="Wrap"/>
+                </Border>
                 <TextBlock Text="Open your default .resx file" FontSize="22" FontWeight="SemiBold" TextAlignment="Center"/>
                 <TextBlock Margin="0,10,0,22" TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
                            Text="Pick a file like Translations.resx and every language file next to it, such as Translations_bg.resx, opens side by side. You can also drop the file onto this window."/>
                 <Button Content="Open .resx file…" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}"
                         HorizontalAlignment="Center" Padding="18,8" Margin="0"/>
+                <TextBlock Margin="0,18,0,0" TextAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                           Text="Tip: hold Shift while starting ResxStudio to skip reopening the last file."/>
             </StackPanel>
+
+            <!-- Loading -->
+            <Border Background="{StaticResource CanvasBrush}"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="280">
+                    <TextBlock Text="{Binding LoadingText}" FontSize="16" TextAlignment="Center" Margin="0,0,0,12"/>
+                    <ProgressBar IsIndeterminate="True" Height="3"/>
+                </StackPanel>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

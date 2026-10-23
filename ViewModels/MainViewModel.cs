@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -19,6 +21,10 @@ public sealed class MainViewModel : ObservableObject
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherTimer _searchTimer;
     private readonly DispatcherTimer _statsTimer;
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    private bool _isLoading;
+    private string _loadingText = "";
+    private string? _startupNotice;
 
     private ResourceSetInfo? _set;
     private string? _openedPath;
@@ -32,6 +38,7 @@ public sealed class MainViewModel : ObservableObject
     private HashSet<string> _problemKeys = new(StringComparer.Ordinal);
     private bool _showProblems;
     private IssueViewModel? _selectedIssue;
+    private ProblemCategoryViewModel? _selectedCategory;
 
     private string? _externalChangeMessage;
     private string? _dismissedExternalChange;
@@ -41,7 +48,6 @@ public sealed class MainViewModel : ObservableObject
         _dialogs = dialogs;
         _filter = FilterOptions[0];
         EntriesView = CreateView(Entries);
-        IssuesView = CreateIssuesView(new List<IssueViewModel>());
 
         // Search waits for a short pause in typing so filtering 20k+ strings never feels laggy.
         _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
@@ -51,15 +57,15 @@ public sealed class MainViewModel : ObservableObject
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _statsTimer.Tick += (_, _) => { _statsTimer.Stop(); RecomputeStats(); };
 
-        OpenCommand = new RelayCommand(OpenInteractive);
-        SaveCommand = new RelayCommand(() => Save(), () => HasChanges);
-        ReloadCommand = new RelayCommand(Reload, () => IsProjectLoaded);
-        AddKeyCommand = new RelayCommand(AddKey, () => IsProjectLoaded);
-        RenameKeyCommand = new RelayCommand(RenameKey, () => SelectedEntry != null);
-        DeleteKeyCommand = new RelayCommand(DeleteKey, () => SelectedEntry != null);
-        AddLanguageCommand = new RelayCommand(AddLanguage, () => IsProjectLoaded);
-        NextMissingCommand = new RelayCommand(GoToNextMissing, () => IsProjectLoaded);
-        AutofillCommand = new RelayCommand(Autofill, () => IsProjectLoaded);
+        OpenCommand = new RelayCommand(OpenInteractive, () => !_isLoading);
+        SaveCommand = new RelayCommand(() => Save(), () => HasChanges && !_isLoading);
+        ReloadCommand = new RelayCommand(Reload, () => IsReady);
+        AddKeyCommand = new RelayCommand(AddKey, () => IsReady);
+        RenameKeyCommand = new RelayCommand(RenameKey, () => SelectedEntry != null && !_isLoading);
+        DeleteKeyCommand = new RelayCommand(DeleteKey, () => SelectedEntry != null && !_isLoading);
+        AddLanguageCommand = new RelayCommand(AddLanguage, () => IsReady);
+        NextMissingCommand = new RelayCommand(GoToNextMissing, () => IsReady);
+        AutofillCommand = new RelayCommand(Autofill, () => IsReady);
         HideProblemsCommand = new RelayCommand(() => ShowProblems = false);
         DismissExternalChangeCommand = new RelayCommand(DismissExternalChange);
     }
@@ -71,7 +77,7 @@ public sealed class MainViewModel : ObservableObject
     public ListCollectionView EntriesView { get; private set; }
     public ObservableCollection<GroupViewModel> Groups { get; } = new();
     public ObservableCollection<CellViewModel> SelectedCells { get; } = new();
-    public ListCollectionView IssuesView { get; private set; }
+    public ObservableCollection<ProblemCategoryViewModel> ProblemCategories { get; } = new();
 
     public IReadOnlyList<FilterOption> FilterOptions { get; } = new[]
     {
@@ -106,6 +112,13 @@ public sealed class MainViewModel : ObservableObject
     // ---- State -------------------------------------------------------------------------------
 
     public bool IsProjectLoaded => _set != null;
+    public bool IsLoading => _isLoading;
+    public bool IsReady => _set != null && !_isLoading;
+    public bool ShowEmptyState => _set == null && !_isLoading;
+    public string LoadingText => _loadingText;
+
+    /// <summary>Explains on the start screen why the last file wasn't reopened.</summary>
+    public string? StartupNotice => _startupNotice;
     public bool HasChanges => Languages.Any(l => l.IsDirty);
     public string WindowTitle => _set == null ? "ResxStudio" : $"{_set.BaseName}{(HasChanges ? " *" : "")} - ResxStudio";
     public string? FolderText => _set?.Folder;
@@ -172,6 +185,17 @@ public sealed class MainViewModel : ObservableObject
         set => Set(ref _showProblems, value);
     }
 
+    public ProblemCategoryViewModel? SelectedCategory
+    {
+        get => _selectedCategory;
+        set
+        {
+            if (Set(ref _selectedCategory, value)) OnPropertyChanged(nameof(VisibleIssues));
+        }
+    }
+
+    public IReadOnlyList<IssueViewModel> VisibleIssues => _selectedCategory?.Issues ?? (IReadOnlyList<IssueViewModel>)Array.Empty<IssueViewModel>();
+
     public IssueViewModel? SelectedIssue
     {
         get => _selectedIssue;
@@ -191,25 +215,73 @@ public sealed class MainViewModel : ObservableObject
 
     // ---- Opening -----------------------------------------------------------------------------
 
-    public bool TryOpen(string path)
+    /// <summary>Runs once when the window has loaded.</summary>
+    public async Task StartupAsync(string? commandLinePath, bool skipReopen)
     {
+        if (commandLinePath != null)
+        {
+            await TryOpenAsync(commandLinePath);
+            return;
+        }
+
+        // The last launch didn't finish opening its file: it crashed or froze. Don't repeat that.
+        if (_settings.OpeningFile is { } unfinished)
+        {
+            Log.Write($"The previous launch didn't finish opening {unfinished}; not reopening it.");
+            _settings.OpeningFile = null;
+            _settings.Save();
+            SetStartupNotice($"ResxStudio didn't finish opening {Path.GetFileName(unfinished)} last time, so it wasn't reopened automatically. " +
+                             $"If it happens again, please send {Log.FilePath}.");
+            return;
+        }
+
+        if (skipReopen)
+        {
+            Log.Write("Shift was held at startup; not reopening the last file.");
+            return;
+        }
+
+        if (_settings.LastFile is { } path && File.Exists(path)) await TryOpenAsync(path);
+    }
+
+    public async Task<bool> TryOpenAsync(string path)
+    {
+        if (_isLoading) return false;
+        SetLoading(true, $"Opening {Path.GetFileName(path)}…");
+        SetStartupNotice(null);
+        _settings.OpeningFile = path;
+        _settings.Save();
+
+        var stopwatch = Stopwatch.StartNew();
         try
         {
-            Open(path);
+            Log.Step($"Reading {path}");
+            // Parsing XML and building the rows happens off the UI thread, so the window stays responsive.
+            var project = await Task.Run(() => LoadProject(path));
+            Log.Write($"Read {project.Languages.Count} files and {project.Entries.Count} keys in {stopwatch.ElapsedMilliseconds} ms");
+
+            Log.Step("Showing the keys");
+            ApplyProject(project, path);
+
+            // Wait until the grid has been laid out and drawn once.
+            await _dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            Log.Step($"Ready after {stopwatch.ElapsedMilliseconds} ms");
+
             _settings.LastFile = path;
-            _settings.Save();
             return true;
         }
         catch (Exception ex)
         {
+            Log.Write($"Opening {path} failed: {ex}");
             _dialogs.ShowError("Couldn't open the file", ex.Message);
             return false;
         }
-    }
-
-    public void OpenLastFile()
-    {
-        if (_settings.LastFile is { } path && File.Exists(path)) TryOpen(path);
+        finally
+        {
+            _settings.OpeningFile = null;
+            _settings.Save();
+            SetLoading(false, "");
+        }
     }
 
     /// <summary>Asks to save if needed. Returns false when the user cancels.</summary>
@@ -225,23 +297,26 @@ public sealed class MainViewModel : ObservableObject
         };
     }
 
-    private void OpenInteractive()
+    private async void OpenInteractive()
     {
         if (!ConfirmDiscardOrSave()) return;
         var path = _dialogs.PickResxFile();
-        if (path != null) TryOpen(path);
+        if (path != null) await TryOpenAsync(path);
     }
 
-    private void Reload()
+    private async void Reload()
     {
         if (_openedPath == null) return;
         CommitPendingEdits?.Invoke();
         if (HasChanges && !_dialogs.Confirm("Reload from disk", "Discard all unsaved changes and reload the files from disk?"))
             return;
-        ReloadPreservingState();
+        await ReloadPreservingStateAsync();
     }
 
-    private void Open(string path)
+    private sealed record LoadedProject(ResourceSetInfo Set, List<LanguageViewModel> Languages, List<EntryViewModel> Entries);
+
+    /// <summary>Reads all files and builds the rows. Runs on a background thread; touches no UI.</summary>
+    private LoadedProject LoadProject(string path)
     {
         var set = ResourceSetLocator.Locate(path);
 
@@ -275,20 +350,29 @@ public sealed class MainViewModel : ObservableObject
                 if (byKey.TryGetValue(key, out var entry) && entry[languageId]?.Replace("\r\n", "\n") == value)
                     entry.MachineTranslated.Set(languageId, true);
 
+        var hidden = _settings.HiddenLanguages.ToList();
+        foreach (var language in languages)
+            language.IsVisible = !hidden.Contains(language.Id, StringComparer.OrdinalIgnoreCase);
+
+        return new LoadedProject(set, languages, ordered);
+    }
+
+    /// <summary>Puts a loaded project on screen. UI thread.</summary>
+    private void ApplyProject(LoadedProject project, string path)
+    {
         foreach (var old in Languages) old.PropertyChanged -= OnLanguagePropertyChanged;
         Languages.Clear();
-        foreach (var language in languages)
+        foreach (var language in project.Languages)
         {
-            language.IsVisible = !_settings.HiddenLanguages.Contains(language.Id, StringComparer.OrdinalIgnoreCase);
             language.PropertyChanged += OnLanguagePropertyChanged;
             Languages.Add(language);
         }
 
-        _set = set;
+        _set = project.Set;
         _openedPath = path;
         SelectedEntry = null;
 
-        Entries = new ObservableCollection<EntryViewModel>(ordered);
+        Entries = new ObservableCollection<EntryViewModel>(project.Entries);
         Entries.CollectionChanged += (_, _) => OnPropertyChanged(nameof(StatusText));
         EntriesView = CreateView(Entries);
 
@@ -305,13 +389,17 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedFilter));
         OnPropertyChanged(nameof(ExternalChangeMessage));
 
+        var stopwatch = Stopwatch.StartNew();
         RecomputeStats();
+        Log.Write($"Counted progress and checked {Entries.Count} keys in {stopwatch.ElapsedMilliseconds} ms ({_issues.Count} findings)");
+
+        Log.Step("Building the grid columns");
         LanguagesChanged?.Invoke(this, EventArgs.Empty);
         RaiseProjectState();
     }
 
     /// <summary>Reloads from disk but keeps the search, filter, section and selected key.</summary>
-    private void ReloadPreservingState()
+    private async Task ReloadPreservingStateAsync()
     {
         if (_openedPath == null) return;
         var search = _searchText;
@@ -319,7 +407,7 @@ public sealed class MainViewModel : ObservableObject
         var groupName = _selectedGroup is { IsAll: false } group ? group.Name : null;
         var selectedKey = _selectedEntry?.Key;
 
-        if (!TryOpen(_openedPath)) return;
+        if (!await TryOpenAsync(_openedPath)) return;
 
         _searchText = search;
         _filter = filter;
@@ -338,6 +426,23 @@ public sealed class MainViewModel : ObservableObject
             SelectedEntry = entry;
             BringIntoViewRequested?.Invoke(this, entry);
         }
+    }
+
+    private void SetLoading(bool loading, string text)
+    {
+        _isLoading = loading;
+        _loadingText = text;
+        OnPropertyChanged(nameof(IsLoading));
+        OnPropertyChanged(nameof(IsReady));
+        OnPropertyChanged(nameof(LoadingText));
+        OnPropertyChanged(nameof(ShowEmptyState));
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void SetStartupNotice(string? notice)
+    {
+        _startupNotice = notice;
+        OnPropertyChanged(nameof(StartupNotice));
     }
 
     // ---- Saving ------------------------------------------------------------------------------
@@ -419,8 +524,6 @@ public sealed class MainViewModel : ObservableObject
 
         if (merged)
         {
-            // Show the merged result, including the other side's changes.
-            ReloadPreservingState();
             if (conflicts.Count > 0)
             {
                 var list = string.Join(Environment.NewLine, conflicts.Take(15));
@@ -428,6 +531,9 @@ public sealed class MainViewModel : ObservableObject
                 _dialogs.ShowInfo("Merged and saved. These keys were changed both here and on disk; your version was kept:" +
                                   Environment.NewLine + Environment.NewLine + list);
             }
+            // Show the merged result, including the other side's changes.
+            _ = ReloadPreservingStateAsync();
+            return true;
         }
 
         CheckExternalChanges();
@@ -515,7 +621,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Called when the window is activated: shows a banner if a file changed on disk.</summary>
     public void CheckExternalChanges()
     {
-        if (_set == null) return;
+        if (_set == null || _isLoading) return;
 
         var changed = Languages
             .Where(l => l.Document.CheckDisk() is DiskChange.Modified or DiskChange.Deleted)
@@ -782,13 +888,6 @@ public sealed class MainViewModel : ObservableObject
     private ListCollectionView CreateView(ObservableCollection<EntryViewModel> source)
         => new(source) { Filter = PassesFilter };
 
-    private static ListCollectionView CreateIssuesView(List<IssueViewModel> issues)
-    {
-        var view = new ListCollectionView(issues);
-        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(IssueViewModel.Category)));
-        return view;
-    }
-
     private bool PassesFilter(object item)
     {
         var entry = (EntryViewModel)item;
@@ -928,10 +1027,7 @@ public sealed class MainViewModel : ObservableObject
         if (!issues.SequenceEqual(_issues))
         {
             _issues = issues;
-            _selectedIssue = null;
-            IssuesView = CreateIssuesView(issues.Select(i => new IssueViewModel(i)).ToList());
-            OnPropertyChanged(nameof(IssuesView));
-            OnPropertyChanged(nameof(SelectedIssue));
+            RebuildProblemCategories();
         }
 
         OnPropertyChanged(nameof(ErrorCount));
@@ -1010,6 +1106,30 @@ public sealed class MainViewModel : ObservableObject
         return issues;
     }
 
+    /// <summary>One entry per problem type, most severe first, each holding a flat list of its issues.</summary>
+    private void RebuildProblemCategories()
+    {
+        var previous = _selectedCategory?.Name;
+        var categories = _issues
+            .GroupBy(i => i.Category)
+            .Select(g => new ProblemCategoryViewModel(
+                g.Key,
+                g.Min(i => i.Severity),
+                g.Select(i => new IssueViewModel(i)).ToList()))
+            .OrderBy(c => c.Severity)
+            .ThenBy(c => c.Name, StringComparer.Ordinal)
+            .ToList();
+
+        ProblemCategories.Clear();
+        foreach (var category in categories) ProblemCategories.Add(category);
+
+        _selectedIssue = null;
+        _selectedCategory = categories.FirstOrDefault(c => c.Name == previous) ?? categories.FirstOrDefault();
+        OnPropertyChanged(nameof(SelectedIssue));
+        OnPropertyChanged(nameof(SelectedCategory));
+        OnPropertyChanged(nameof(VisibleIssues));
+    }
+
     // ---- Helpers -----------------------------------------------------------------------------
 
     private void RebuildCells()
@@ -1026,6 +1146,8 @@ public sealed class MainViewModel : ObservableObject
     private void RaiseProjectState()
     {
         OnPropertyChanged(nameof(IsProjectLoaded));
+        OnPropertyChanged(nameof(IsReady));
+        OnPropertyChanged(nameof(ShowEmptyState));
         OnPropertyChanged(nameof(HasChanges));
         OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(StatusText));

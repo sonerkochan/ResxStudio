@@ -20,6 +20,7 @@ public partial class MainWindow : Window, IDialogService
 {
     private readonly MainViewModel _vm;
     private readonly Dictionary<LanguageViewModel, DataGridColumn> _columns = new();
+    private bool _gridEditing;
 
     public MainWindow()
     {
@@ -36,17 +37,27 @@ public partial class MainWindow : Window, IDialogService
         };
         DataContext = _vm;
 
+        // Track whether a grid cell is being edited, so edits are only committed when there is one.
+        EntriesGrid.BeginningEdit += (_, _) => _gridEditing = true;
+        EntriesGrid.RowEditEnding += (_, _) => Dispatcher.InvokeAsync(() => _gridEditing = false);
+
         Loaded += OnLoaded;
         Closing += OnClosing;
         // Coming back to the window after git pull, VS, etc.: look for files changed on disk.
-        Activated += (_, _) => _vm.CheckExternalChanges();
+        // Skipped while one of our own dialogs is open, since closing it also activates the window.
+        Activated += (_, _) =>
+        {
+            if (OwnedWindows.Count == 0) _vm.CheckExternalChanges();
+        };
+        Log.Write("Main window constructed");
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1])) _vm.TryOpen(args[1]);
-        else _vm.OpenLastFile();
+        var commandLinePath = args.Length > 1 && File.Exists(args[1]) ? args[1] : null;
+        var skipReopen = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        await _vm.StartupAsync(commandLinePath, skipReopen);
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -105,8 +116,9 @@ public partial class MainWindow : Window, IDialogService
             {
                 Header = language.Header,
                 Binding = new Binding(path) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
-                Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-                MinWidth = 180,
+                // Fixed widths (resizable by dragging) keep layout simple and fast with many languages.
+                Width = new DataGridLength(320),
+                MinWidth = 120,
                 CanUserSort = false,
                 ElementStyle = (Style)FindResource("ValueCellText"),
                 EditingElementStyle = (Style)FindResource("ValueCellEditor"),
@@ -152,6 +164,7 @@ public partial class MainWindow : Window, IDialogService
 
     private void CommitGridEdits()
     {
+        if (!_gridEditing) return;
         try
         {
             EntriesGrid.CommitEdit(DataGridEditingUnit.Row, true);
@@ -165,6 +178,7 @@ public partial class MainWindow : Window, IDialogService
     // Clicking outside the grid doesn't end a cell edit on its own; do it here.
     private void OnGridLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
+        if (!_gridEditing) return;
         if (e.NewFocus is Visual target && EntriesGrid.IsAncestorOf(target)) return;
         Dispatcher.InvokeAsync(CommitGridEdits);
     }
@@ -241,7 +255,7 @@ public partial class MainWindow : Window, IDialogService
         var path = GetDroppedResx(e);
         if (path == null) return;
         e.Handled = true;
-        if (_vm.ConfirmDiscardOrSave()) _vm.TryOpen(path);
+        if (_vm.ConfirmDiscardOrSave()) _ = _vm.TryOpenAsync(path);
     }
 
     private static string? GetDroppedResx(DragEventArgs e)
