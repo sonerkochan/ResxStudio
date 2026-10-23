@@ -30,10 +30,16 @@ public partial class MainWindow : Window, IDialogService
         _vm.BringIntoViewRequested += (_, entry) =>
             Dispatcher.InvokeAsync(() => EntriesGrid.ScrollIntoView(entry), DispatcherPriority.Background);
         _vm.FocusCellRequested += (_, cell) => FocusCell(cell);
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.ShowProblems)) UpdateProblemsPanel();
+        };
         DataContext = _vm;
 
         Loaded += OnLoaded;
         Closing += OnClosing;
+        // Coming back to the window after git pull, VS, etc.: look for files changed on disk.
+        Activated += (_, _) => _vm.CheckExternalChanges();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -45,7 +51,33 @@ public partial class MainWindow : Window, IDialogService
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        if (!_vm.ConfirmDiscardOrSave()) e.Cancel = true;
+        if (!_vm.ConfirmDiscardOrSave())
+        {
+            e.Cancel = true;
+            return;
+        }
+        _vm.PersistReviewState();
+    }
+
+    // ---- Problems panel ----------------------------------------------------------------------
+
+    private GridLength _problemsHeight = new(240);
+
+    private void UpdateProblemsPanel()
+    {
+        if (_vm.ShowProblems)
+        {
+            ProblemsRow.MinHeight = 100;
+            ProblemsRow.Height = _problemsHeight;
+            ProblemsSplitter.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            if (ProblemsRow.ActualHeight > 0) _problemsHeight = new GridLength(ProblemsRow.ActualHeight);
+            ProblemsRow.MinHeight = 0;
+            ProblemsRow.Height = new GridLength(0);
+            ProblemsSplitter.Visibility = Visibility.Collapsed;
+        }
     }
 
     // ---- Grid columns ------------------------------------------------------------------------
@@ -78,7 +110,7 @@ public partial class MainWindow : Window, IDialogService
                 CanUserSort = false,
                 ElementStyle = (Style)FindResource("ValueCellText"),
                 EditingElementStyle = (Style)FindResource("ValueCellEditor"),
-                CellStyle = BuildValueCellStyle(path),
+                CellStyle = BuildValueCellStyle(language.Id),
                 Visibility = language.IsVisible ? Visibility.Visible : Visibility.Collapsed,
             };
             _columns[language] = column;
@@ -87,16 +119,24 @@ public partial class MainWindow : Window, IDialogService
         }
     }
 
-    /// <summary>Cell style that turns the cell rose when this language has no text.</summary>
-    private Style BuildValueCellStyle(string bindingPath)
+    /// <summary>Cell style: rose when this language has no text, amber while it's an unreviewed machine translation.</summary>
+    private Style BuildValueCellStyle(string languageId)
     {
         var style = new Style(typeof(DataGridCell), (Style)FindResource("CellBase"));
         foreach (var emptyValue in new object?[] { null, "" })
         {
-            var trigger = new DataTrigger { Binding = new Binding(bindingPath), Value = emptyValue };
-            trigger.Setters.Add(new Setter(Control.BackgroundProperty, FindResource("MissingBrush")));
-            style.Triggers.Add(trigger);
+            var missing = new DataTrigger { Binding = new Binding($"[{languageId}]"), Value = emptyValue };
+            missing.Setters.Add(new Setter(Control.BackgroundProperty, FindResource("MissingBrush")));
+            style.Triggers.Add(missing);
         }
+
+        var machine = new DataTrigger
+        {
+            Binding = new Binding($"{nameof(EntryViewModel.MachineTranslated)}[{languageId}]"),
+            Value = true,
+        };
+        machine.Setters.Add(new Setter(Control.BackgroundProperty, FindResource("MachineBrush")));
+        style.Triggers.Add(machine);
         return style;
     }
 
@@ -225,6 +265,18 @@ public partial class MainWindow : Window, IDialogService
     {
         var dialog = new InputDialog(title, label, initialText, confirmText, validate) { Owner = this };
         return dialog.ShowDialog() == true ? dialog.Result : null;
+    }
+
+    public int? Choose(string title, string message, params string[] options)
+    {
+        var dialog = new ChoiceDialog(title, message, options) { Owner = this };
+        return dialog.ShowDialog() == true ? dialog.Choice : null;
+    }
+
+    public void ShowAutofill(AutofillContext context)
+    {
+        var dialog = new AutofillDialog(context) { Owner = this };
+        dialog.ShowDialog();
     }
 
     public bool Confirm(string title, string message)

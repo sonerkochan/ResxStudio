@@ -11,6 +11,13 @@ public sealed class AppSettings
     public string? LastFile { get; set; }
     public List<string> HiddenLanguages { get; set; } = new();
 
+    /// <summary>Language of the default .resx file, sent to the translation service as the source.</summary>
+    public string SourceLanguage { get; set; } = "en";
+    public string? MyMemoryEmail { get; set; }
+
+    /// <summary>Names that are never translated. Edit them in the autofill window.</summary>
+    public List<string> ProtectedTerms { get; set; } = new() { "Example 1", "Example 2", "Example 3" };
+
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ResxStudio", "settings.json");
 

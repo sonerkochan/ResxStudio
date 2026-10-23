@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 
 namespace ResxStudio.ViewModels;
 
@@ -41,6 +42,9 @@ public sealed class EntryViewModel : ObservableObject
         }
     }
 
+    /// <summary>Which languages hold machine-translated text that nobody has reviewed yet.</summary>
+    public MachineTranslatedFlags MachineTranslated { get; } = new();
+
     /// <summary>Text for a language id; null when the key doesn't exist in that file.</summary>
     public string? this[string languageId]
     {
@@ -50,10 +54,18 @@ public sealed class EntryViewModel : ObservableObject
             var current = this[languageId];
             if (string.Equals(current ?? "", value ?? "", StringComparison.Ordinal)) return;
             _values[languageId] = value;
+            // Any edit by a person counts as a review.
+            MachineTranslated.Set(languageId, false);
             OnPropertyChanged("Item[]");
             OnPropertyChanged(nameof(IsOrphan));
             _valueChanged(this, languageId);
         }
+    }
+
+    public void SetMachineTranslation(string languageId, string value)
+    {
+        this[languageId] = value;
+        MachineTranslated.Set(languageId, true);
     }
 
     public bool HasValue(string languageId) => !string.IsNullOrEmpty(this[languageId]);
@@ -63,4 +75,22 @@ public sealed class EntryViewModel : ObservableObject
 
     /// <summary>Sets a value while loading, without marking anything as changed.</summary>
     internal void Load(string languageId, string value) => _values[languageId] = value;
+}
+
+/// <summary>Bindable set of language ids, so the grid can bind to MachineTranslated[bg].</summary>
+public sealed class MachineTranslatedFlags : INotifyPropertyChanged
+{
+    private readonly HashSet<string> _languageIds = new(StringComparer.OrdinalIgnoreCase);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public bool this[string languageId] => _languageIds.Contains(languageId);
+
+    public bool Any => _languageIds.Count > 0;
+
+    internal void Set(string languageId, bool value)
+    {
+        var changed = value ? _languageIds.Add(languageId) : _languageIds.Remove(languageId);
+        if (changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+    }
 }

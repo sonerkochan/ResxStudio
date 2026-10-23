@@ -23,22 +23,32 @@ public sealed class MainViewModel : ObservableObject
     private ResourceSetInfo? _set;
     private string? _openedPath;
     private string _searchText = "";
-    private bool _showMissingOnly;
+    private FilterOption _filter;
     private GroupViewModel? _selectedGroup;
     private EntryViewModel? _selectedEntry;
     private bool _rebuildingGroups;
 
+    private List<ValidationIssue> _issues = new();
+    private HashSet<string> _problemKeys = new(StringComparer.Ordinal);
+    private bool _showProblems;
+    private IssueViewModel? _selectedIssue;
+
+    private string? _externalChangeMessage;
+    private string? _dismissedExternalChange;
+
     public MainViewModel(IDialogService dialogs)
     {
         _dialogs = dialogs;
+        _filter = FilterOptions[0];
         EntriesView = CreateView(Entries);
+        IssuesView = CreateIssuesView(new List<IssueViewModel>());
 
         // Search waits for a short pause in typing so filtering 20k+ strings never feels laggy.
         _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); RefreshView(); };
 
-        // Progress and section counts are recalculated shortly after edits, not on every keystroke.
-        _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        // Progress, section counts and problems are recalculated shortly after edits, not on every keystroke.
+        _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _statsTimer.Tick += (_, _) => { _statsTimer.Stop(); RecomputeStats(); };
 
         OpenCommand = new RelayCommand(OpenInteractive);
@@ -49,6 +59,9 @@ public sealed class MainViewModel : ObservableObject
         DeleteKeyCommand = new RelayCommand(DeleteKey, () => SelectedEntry != null);
         AddLanguageCommand = new RelayCommand(AddLanguage, () => IsProjectLoaded);
         NextMissingCommand = new RelayCommand(GoToNextMissing, () => IsProjectLoaded);
+        AutofillCommand = new RelayCommand(Autofill, () => IsProjectLoaded);
+        HideProblemsCommand = new RelayCommand(() => ShowProblems = false);
+        DismissExternalChangeCommand = new RelayCommand(DismissExternalChange);
     }
 
     // ---- Collections -------------------------------------------------------------------------
@@ -58,6 +71,15 @@ public sealed class MainViewModel : ObservableObject
     public ListCollectionView EntriesView { get; private set; }
     public ObservableCollection<GroupViewModel> Groups { get; } = new();
     public ObservableCollection<CellViewModel> SelectedCells { get; } = new();
+    public ListCollectionView IssuesView { get; private set; }
+
+    public IReadOnlyList<FilterOption> FilterOptions { get; } = new[]
+    {
+        new FilterOption(EntryFilter.All, "All keys"),
+        new FilterOption(EntryFilter.Untranslated, "Untranslated"),
+        new FilterOption(EntryFilter.AutoTranslated, "Auto-translated, to review"),
+        new FilterOption(EntryFilter.WithProblems, "With problems"),
+    };
 
     // ---- Hooks for the window ----------------------------------------------------------------
 
@@ -77,6 +99,9 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand DeleteKeyCommand { get; }
     public RelayCommand AddLanguageCommand { get; }
     public RelayCommand NextMissingCommand { get; }
+    public RelayCommand AutofillCommand { get; }
+    public RelayCommand HideProblemsCommand { get; }
+    public RelayCommand DismissExternalChangeCommand { get; }
 
     // ---- State -------------------------------------------------------------------------------
 
@@ -107,12 +132,12 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public bool ShowMissingOnly
+    public FilterOption SelectedFilter
     {
-        get => _showMissingOnly;
+        get => _filter;
         set
         {
-            if (Set(ref _showMissingOnly, value)) RefreshView();
+            if (value != null && Set(ref _filter, value)) RefreshView();
         }
     }
 
@@ -135,6 +160,34 @@ public sealed class MainViewModel : ObservableObject
             CommandManager.InvalidateRequerySuggested();
         }
     }
+
+    /// <summary>Shown as a banner when a file changed outside the editor.</summary>
+    public string? ExternalChangeMessage => _externalChangeMessage;
+
+    // ---- Problems ----------------------------------------------------------------------------
+
+    public bool ShowProblems
+    {
+        get => _showProblems;
+        set => Set(ref _showProblems, value);
+    }
+
+    public IssueViewModel? SelectedIssue
+    {
+        get => _selectedIssue;
+        set
+        {
+            if (Set(ref _selectedIssue, value) && value != null) NavigateTo(value);
+        }
+    }
+
+    public int ErrorCount => _issues.Count(i => i.Severity == IssueSeverity.Error);
+    public int WarningCount => _issues.Count(i => i.Severity == IssueSeverity.Warning);
+    public int NoteCount => _issues.Count(i => i.Severity == IssueSeverity.Info);
+    public int ProblemCount => ErrorCount + WarningCount;
+    public string ProblemsButtonText => ProblemCount == 0 ? "Problems" : $"Problems ({ProblemCount:N0})";
+    public string ProblemSummary =>
+        $"{Plural(ErrorCount, "error")}, {Plural(WarningCount, "warning")}, {Plural(NoteCount, "note")}";
 
     // ---- Opening -----------------------------------------------------------------------------
 
@@ -185,7 +238,7 @@ public sealed class MainViewModel : ObservableObject
         CommitPendingEdits?.Invoke();
         if (HasChanges && !_dialogs.Confirm("Reload from disk", "Discard all unsaved changes and reload the files from disk?"))
             return;
-        TryOpen(_openedPath);
+        ReloadPreservingState();
     }
 
     private void Open(string path)
@@ -202,7 +255,9 @@ public sealed class MainViewModel : ObservableObject
         var ordered = new List<EntryViewModel>();
         foreach (var language in languages)
         {
-            foreach (var (key, value) in language.Document.ReadStrings())
+            var strings = language.Document.ReadStrings();
+            language.Baseline = ToDictionary(Normalize(strings, language.IsNeutral));
+            foreach (var (key, value) in strings)
             {
                 if (!byKey.TryGetValue(key, out var entry))
                 {
@@ -213,6 +268,12 @@ public sealed class MainViewModel : ObservableObject
                 entry.Load(language.Id, value);
             }
         }
+
+        // Restore "auto-translated, not reviewed yet" marks from earlier sessions.
+        foreach (var (languageId, values) in ReviewStore.Load(set.NeutralPath))
+            foreach (var (key, value) in values)
+                if (byKey.TryGetValue(key, out var entry) && entry[languageId]?.Replace("\r\n", "\n") == value)
+                    entry.MachineTranslated.Set(languageId, true);
 
         foreach (var old in Languages) old.PropertyChanged -= OnLanguagePropertyChanged;
         Languages.Clear();
@@ -232,18 +293,51 @@ public sealed class MainViewModel : ObservableObject
         EntriesView = CreateView(Entries);
 
         _searchText = "";
-        _showMissingOnly = false;
+        _filter = FilterOptions[0];
         _selectedGroup = null;
+        _externalChangeMessage = null;
+        _dismissedExternalChange = null;
         Groups.Clear();
 
         OnPropertyChanged(nameof(Entries));
         OnPropertyChanged(nameof(EntriesView));
         OnPropertyChanged(nameof(SearchText));
-        OnPropertyChanged(nameof(ShowMissingOnly));
+        OnPropertyChanged(nameof(SelectedFilter));
+        OnPropertyChanged(nameof(ExternalChangeMessage));
 
         RecomputeStats();
         LanguagesChanged?.Invoke(this, EventArgs.Empty);
         RaiseProjectState();
+    }
+
+    /// <summary>Reloads from disk but keeps the search, filter, section and selected key.</summary>
+    private void ReloadPreservingState()
+    {
+        if (_openedPath == null) return;
+        var search = _searchText;
+        var filter = _filter;
+        var groupName = _selectedGroup is { IsAll: false } group ? group.Name : null;
+        var selectedKey = _selectedEntry?.Key;
+
+        if (!TryOpen(_openedPath)) return;
+
+        _searchText = search;
+        _filter = filter;
+        OnPropertyChanged(nameof(SearchText));
+        OnPropertyChanged(nameof(SelectedFilter));
+        if (groupName != null
+            && Groups.FirstOrDefault(g => !g.IsAll && string.Equals(g.Name, groupName, StringComparison.OrdinalIgnoreCase)) is { } match)
+        {
+            _selectedGroup = match;
+            OnPropertyChanged(nameof(SelectedGroup));
+        }
+        RefreshView();
+
+        if (selectedKey != null && Entries.FirstOrDefault(e => e.Key == selectedKey) is { } entry && EntriesView.Contains(entry))
+        {
+            SelectedEntry = entry;
+            BringIntoViewRequested?.Invoke(this, entry);
+        }
     }
 
     // ---- Saving ------------------------------------------------------------------------------
@@ -251,6 +345,27 @@ public sealed class MainViewModel : ObservableObject
     public bool Save()
     {
         CommitPendingEdits?.Invoke();
+        var dirty = Languages.Where(l => l.IsDirty).ToList();
+        if (dirty.Count == 0) return true;
+
+        if (!ConfirmProblemsBeforeSave(dirty)) return false;
+
+        // Did anyone else change these files since we read them?
+        var changedOnDisk = dirty.Where(l => l.Document.CheckDisk() == DiskChange.Modified).ToList();
+        var merge = false;
+        if (changedOnDisk.Count > 0)
+        {
+            var names = string.Join(", ", changedOnDisk.Select(l => l.FileName));
+            var pronoun = changedOnDisk.Count == 1 ? "it" : "them";
+            var choice = _dialogs.Choose(
+                "Files changed outside ResxStudio",
+                $"{names} changed on disk after ResxStudio loaded {pronoun}, for example by git or Visual Studio.\n\n" +
+                "Merge keeps those changes and applies only the keys you edited here. If both sides changed the same key, your version is kept.\n\n" +
+                "Overwrite replaces the file with what you see here, and the other changes are lost.",
+                "Merge", "Overwrite", "Cancel");
+            if (choice is null or 2) return false;
+            merge = choice == 0;
+        }
 
         var renames = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in Entries)
@@ -258,21 +373,33 @@ public sealed class MainViewModel : ObservableObject
                 renames[entry.OriginalKey] = entry.Key;
 
         var failures = new List<string>();
-        foreach (var language in Languages.Where(l => l.IsDirty).ToList())
-        {
-            var desired = new List<KeyValuePair<string, string>>();
-            foreach (var entry in Entries)
-            {
-                var value = entry[language.Id];
-                // An empty translation would hide the default text at runtime, so it's left out.
-                if (value == null || (!language.IsNeutral && value.Length == 0)) continue;
-                desired.Add(new KeyValuePair<string, string>(entry.Key, value.Replace("\r\n", "\n")));
-            }
+        var conflicts = new List<string>();
+        var merged = false;
 
+        foreach (var language in dirty)
+        {
+            var desired = BuildDesired(language);
             try
             {
-                language.Document.Apply(desired, renames);
-                language.Document.Save();
+                if (merge && changedOnDisk.Contains(language))
+                {
+                    var fresh = ResxDocument.Load(language.Document.FilePath);
+                    var theirs = Normalize(fresh.ReadStrings(), language.IsNeutral);
+                    var keyConflicts = new List<string>();
+                    var result = ResxMerger.Merge(desired, language.Baseline, theirs, renames, keyConflicts);
+                    fresh.Apply(result, renames);
+                    fresh.Save();
+                    language.Document = fresh;
+                    language.Baseline = ToDictionary(result);
+                    conflicts.AddRange(keyConflicts.Select(k => $"{k} in {language.FileName}"));
+                    merged = true;
+                }
+                else
+                {
+                    language.Document.Apply(desired, renames);
+                    language.Document.Save();
+                    language.Baseline = ToDictionary(desired);
+                }
                 language.IsDirty = false;
             }
             catch (Exception ex)
@@ -288,7 +415,154 @@ public sealed class MainViewModel : ObservableObject
         }
 
         foreach (var entry in Entries) entry.OriginalKey = entry.Key;
+        PersistReviewState();
+
+        if (merged)
+        {
+            // Show the merged result, including the other side's changes.
+            ReloadPreservingState();
+            if (conflicts.Count > 0)
+            {
+                var list = string.Join(Environment.NewLine, conflicts.Take(15));
+                if (conflicts.Count > 15) list += $"{Environment.NewLine}and {conflicts.Count - 15} more";
+                _dialogs.ShowInfo("Merged and saved. These keys were changed both here and on disk; your version was kept:" +
+                                  Environment.NewLine + Environment.NewLine + list);
+            }
+        }
+
+        CheckExternalChanges();
+        RunValidation();
         return true;
+    }
+
+    /// <summary>Broken placeholders can crash string.Format at runtime, so ask before saving them.</summary>
+    private bool ConfirmProblemsBeforeSave(IReadOnlyCollection<LanguageViewModel> dirty)
+    {
+        RunValidation();
+        var dirtyIds = dirty.Select(l => l.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var broken = _issues.Count(i =>
+            i.Severity == IssueSeverity.Error
+            && i.LanguageId != null && dirtyIds.Contains(i.LanguageId)
+            && (i.Category == TranslationChecks.Placeholders || i.Category == TranslationChecks.Malformed));
+        if (broken == 0) return true;
+
+        var verb = broken == 1 ? "has" : "have";
+        var choice = _dialogs.Choose(
+            "Check placeholders before saving",
+            $"{Plural(broken, "text")} {verb} missing or malformed placeholders such as {{0}}. " +
+            "If the app formats these strings, it can show the wrong text or throw an error.",
+            "Save anyway", "Show problems", "Cancel");
+
+        if (choice == 0) return true;
+        if (choice == 1)
+        {
+            ShowProblems = true;
+            SelectedFilter = FilterOptions.First(f => f.Mode == EntryFilter.WithProblems);
+        }
+        return false;
+    }
+
+    private List<KeyValuePair<string, string>> BuildDesired(LanguageViewModel language)
+    {
+        var desired = new List<KeyValuePair<string, string>>();
+        foreach (var entry in Entries)
+        {
+            var value = entry[language.Id];
+            // An empty translation would hide the default text at runtime, so it's left out.
+            if (value == null || (!language.IsNeutral && value.Length == 0)) continue;
+            desired.Add(new KeyValuePair<string, string>(entry.Key, value.Replace("\r\n", "\n")));
+        }
+        return desired;
+    }
+
+    private static List<KeyValuePair<string, string>> Normalize(IEnumerable<KeyValuePair<string, string>> values, bool isNeutral)
+        => values
+            .Where(p => isNeutral || p.Value.Length > 0)
+            .Select(p => new KeyValuePair<string, string>(p.Key, p.Value.Replace("\r\n", "\n")))
+            .ToList();
+
+    private static Dictionary<string, string> ToDictionary(IEnumerable<KeyValuePair<string, string>> values)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, value) in values) result[key] = value;
+        return result;
+    }
+
+    /// <summary>Saves which values are still unreviewed machine translations (outside the .resx files).</summary>
+    public void PersistReviewState()
+    {
+        if (_set == null) return;
+        var data = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in Entries)
+        {
+            if (!entry.MachineTranslated.Any) continue;
+            foreach (var language in Languages)
+            {
+                if (!entry.MachineTranslated[language.Id] || entry[language.Id] is not { } value) continue;
+                if (!data.TryGetValue(language.Id, out var map))
+                {
+                    map = new Dictionary<string, string>(StringComparer.Ordinal);
+                    data[language.Id] = map;
+                }
+                map[entry.Key] = value.Replace("\r\n", "\n");
+            }
+        }
+        ReviewStore.Save(_set.NeutralPath, data);
+    }
+
+    // ---- Changes made outside the editor -----------------------------------------------------
+
+    /// <summary>Called when the window is activated: shows a banner if a file changed on disk.</summary>
+    public void CheckExternalChanges()
+    {
+        if (_set == null) return;
+
+        var changed = Languages
+            .Where(l => l.Document.CheckDisk() is DiskChange.Modified or DiskChange.Deleted)
+            .ToList();
+
+        string? message = null;
+        if (changed.Count > 0)
+        {
+            var names = string.Join(", ", changed.Select(l => l.FileName));
+            var verb = changed.Count == 1 ? "was" : "were";
+            message = changed.Any(l => l.IsDirty)
+                ? $"{names} {verb} changed outside ResxStudio. When you save, you can merge your edits with those changes, or reload now to discard your edits."
+                : $"{names} {verb} changed outside ResxStudio. Reload to see the latest version.";
+        }
+
+        if (message != null && message == _dismissedExternalChange) message = null;
+        if (message == _externalChangeMessage) return;
+        _externalChangeMessage = message;
+        OnPropertyChanged(nameof(ExternalChangeMessage));
+    }
+
+    private void DismissExternalChange()
+    {
+        _dismissedExternalChange = _externalChangeMessage;
+        _externalChangeMessage = null;
+        OnPropertyChanged(nameof(ExternalChangeMessage));
+    }
+
+    // ---- Autofill ----------------------------------------------------------------------------
+
+    private void Autofill()
+    {
+        CommitPendingEdits?.Invoke();
+        var targets = Languages.Where(l => !l.IsNeutral).ToList();
+        if (targets.Count == 0)
+        {
+            _dialogs.ShowInfo("Add a language first, then autofill can translate into it.");
+            return;
+        }
+
+        var viewEntries = EntriesView.Cast<EntryViewModel>().ToList();
+        _dialogs.ShowAutofill(new AutofillContext(targets, Entries.ToList(), viewEntries, SelectedEntry, _settings));
+
+        _settings.Save();
+        PersistReviewState();
+        RecomputeStats();
+        RefreshView();
     }
 
     // ---- Keys --------------------------------------------------------------------------------
@@ -319,16 +593,9 @@ public sealed class MainViewModel : ObservableObject
         Entries.Insert(index, entry);
         Languages[0].IsDirty = true;
 
-        if (!PassesFilter(entry))
-        {
-            _searchText = "";
-            OnPropertyChanged(nameof(SearchText));
-            _selectedGroup = Groups.FirstOrDefault();
-            OnPropertyChanged(nameof(SelectedGroup));
-            RefreshView();
-        }
-
         RecomputeStats();
+        if (!PassesFilter(entry)) ResetFilters();
+
         SelectedEntry = entry;
         BringIntoViewRequested?.Invoke(this, entry);
         if (SelectedCells.Count > 0) FocusCellRequested?.Invoke(this, SelectedCells[0]);
@@ -415,7 +682,7 @@ public sealed class MainViewModel : ObservableObject
 
         RecomputeStats();
         RebuildCells();
-        if (_showMissingOnly) RefreshView();
+        if (_filter.Mode != EntryFilter.All) RefreshView();
         LanguagesChanged?.Invoke(this, EventArgs.Empty);
         RaiseProjectState();
     }
@@ -452,7 +719,7 @@ public sealed class MainViewModel : ObservableObject
             _settings.Save();
 
             RebuildCells();
-            if (_showMissingOnly) RefreshView();
+            if (_filter.Mode != EntryFilter.All) RefreshView();
             RefreshGroups();
         }
     }
@@ -481,10 +748,46 @@ public sealed class MainViewModel : ObservableObject
         _dialogs.ShowInfo("Every key in this view has text in all the visible languages.");
     }
 
+    private void NavigateTo(IssueViewModel issue)
+    {
+        var entry = Entries.FirstOrDefault(e => e.Key == issue.Key);
+        if (entry == null) return;
+
+        var language = issue.Issue.LanguageId == null
+            ? null
+            : Languages.FirstOrDefault(l => string.Equals(l.Id, issue.Issue.LanguageId, StringComparison.OrdinalIgnoreCase));
+        if (language is { IsVisible: false }) language.IsVisible = true;
+
+        if (!EntriesView.Contains(entry)) ResetFilters();
+
+        SelectedEntry = entry;
+        BringIntoViewRequested?.Invoke(this, entry);
+        var cell = SelectedCells.FirstOrDefault(c => c.Language == language) ?? SelectedCells.FirstOrDefault();
+        if (cell != null) FocusCellRequested?.Invoke(this, cell);
+    }
+
+    private void ResetFilters()
+    {
+        _searchText = "";
+        _filter = FilterOptions[0];
+        _selectedGroup = Groups.FirstOrDefault();
+        OnPropertyChanged(nameof(SearchText));
+        OnPropertyChanged(nameof(SelectedFilter));
+        OnPropertyChanged(nameof(SelectedGroup));
+        RefreshView();
+    }
+
     // ---- Filtering and stats -----------------------------------------------------------------
 
     private ListCollectionView CreateView(ObservableCollection<EntryViewModel> source)
         => new(source) { Filter = PassesFilter };
+
+    private static ListCollectionView CreateIssuesView(List<IssueViewModel> issues)
+    {
+        var view = new ListCollectionView(issues);
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(IssueViewModel.Category)));
+        return view;
+    }
 
     private bool PassesFilter(object item)
     {
@@ -494,7 +797,13 @@ public sealed class MainViewModel : ObservableObject
             && !string.Equals(entry.Group, group.Name, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        if (_showMissingOnly && !IsIncomplete(entry)) return false;
+        switch (_filter.Mode)
+        {
+            case EntryFilter.Untranslated when !IsIncomplete(entry):
+            case EntryFilter.AutoTranslated when !HasVisibleMachineTranslation(entry):
+            case EntryFilter.WithProblems when !_problemKeys.Contains(entry.Key):
+                return false;
+        }
 
         var query = _searchText.Trim();
         if (query.Length == 0) return true;
@@ -510,6 +819,15 @@ public sealed class MainViewModel : ObservableObject
     {
         foreach (var language in Languages)
             if ((language.IsNeutral || language.IsVisible) && !entry.HasValue(language.Id))
+                return true;
+        return false;
+    }
+
+    private bool HasVisibleMachineTranslation(EntryViewModel entry)
+    {
+        if (!entry.MachineTranslated.Any) return false;
+        foreach (var language in Languages)
+            if (language.IsVisible && entry.MachineTranslated[language.Id])
                 return true;
         return false;
     }
@@ -545,6 +863,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         RefreshGroups();
+        RunValidation();
         OnPropertyChanged(nameof(StatusText));
     }
 
@@ -596,6 +915,103 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    // ---- Validation --------------------------------------------------------------------------
+
+    private void RunValidation()
+    {
+        var issues = BuildIssues();
+        _problemKeys = issues
+            .Where(i => i.Severity != IssueSeverity.Info)
+            .Select(i => i.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!issues.SequenceEqual(_issues))
+        {
+            _issues = issues;
+            _selectedIssue = null;
+            IssuesView = CreateIssuesView(issues.Select(i => new IssueViewModel(i)).ToList());
+            OnPropertyChanged(nameof(IssuesView));
+            OnPropertyChanged(nameof(SelectedIssue));
+        }
+
+        OnPropertyChanged(nameof(ErrorCount));
+        OnPropertyChanged(nameof(WarningCount));
+        OnPropertyChanged(nameof(NoteCount));
+        OnPropertyChanged(nameof(ProblemCount));
+        OnPropertyChanged(nameof(ProblemsButtonText));
+        OnPropertyChanged(nameof(ProblemSummary));
+    }
+
+    private List<ValidationIssue> BuildIssues()
+    {
+        var issues = new List<ValidationIssue>();
+        if (_set == null) return issues;
+
+        const string neutral = LanguageViewModel.NeutralId;
+        var defaultLanguage = Languages[0];
+
+        // The same key twice in one file: .NET throws when reading it, and only one copy can be edited.
+        foreach (var language in Languages)
+            foreach (var key in language.Document.DuplicateKeys)
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, TranslationChecks.Duplicates, key, language.Id, language.Header,
+                    $"Appears more than once in {language.FileName}. Saving keeps a single copy with the text shown here."));
+
+        // Keys that differ only by case collide in generated code and case-insensitive lookups.
+        foreach (var group in Entries.GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
+        {
+            foreach (var entry in group)
+            {
+                var others = string.Join(", ", group.Where(e => e != entry).Select(e => e.Key));
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, TranslationChecks.Duplicates, entry.Key, null, "All files",
+                    $"Differs from {others} only by upper/lower case. Generated code and some lookups treat them as the same key."));
+            }
+        }
+
+        foreach (var entry in Entries)
+        {
+            var defaultText = entry[neutral];
+            if (defaultText == null)
+            {
+                var withText = Languages.Where(l => !l.IsNeutral && entry[l.Id] != null).ToList();
+                if (withText.Count > 0)
+                    issues.Add(new ValidationIssue(IssueSeverity.Error, TranslationChecks.Orphans, entry.Key, neutral,
+                        string.Join(", ", withText.Select(l => l.EnglishName)),
+                        "Has no default text, so languages without a translation show nothing. Add default text, or rename the key if it's a typo."));
+                continue;
+            }
+
+            foreach (var problem in TranslationChecks.CheckDefault(defaultText))
+                issues.Add(new ValidationIssue(problem.Severity, problem.Category, entry.Key, neutral, defaultLanguage.Header, problem.Message));
+
+            foreach (var language in Languages)
+            {
+                if (language.IsNeutral) continue;
+                var text = entry[language.Id];
+                if (string.IsNullOrEmpty(text))
+                {
+                    if (defaultText.Length > 0)
+                        issues.Add(new ValidationIssue(IssueSeverity.Info, TranslationChecks.Missing, entry.Key, language.Id, language.Header, "No translation yet."));
+                    continue;
+                }
+                foreach (var problem in TranslationChecks.CheckTranslation(defaultText, text))
+                    issues.Add(new ValidationIssue(problem.Severity, problem.Category, entry.Key, language.Id, language.Header, problem.Message));
+            }
+        }
+
+        issues.Sort((a, b) =>
+        {
+            var c = a.Severity.CompareTo(b.Severity);
+            if (c != 0) return c;
+            c = string.Compare(a.Category, b.Category, StringComparison.Ordinal);
+            if (c != 0) return c;
+            c = string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
+            return c != 0 ? c : string.Compare(a.Location, b.Location, StringComparison.Ordinal);
+        });
+        return issues;
+    }
+
+    // ---- Helpers -----------------------------------------------------------------------------
+
     private void RebuildCells()
     {
         foreach (var cell in SelectedCells) cell.Dispose();
@@ -617,4 +1033,6 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(FolderText));
         CommandManager.InvalidateRequerySuggested();
     }
+
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count:N0} {noun}s";
 }

@@ -20,6 +20,10 @@
         <SolidColorBrush x:Key="MissingBorderBrush" Color="#F2B8B5"/>
         <SolidColorBrush x:Key="DangerBrush" Color="#B42318"/>
         <SolidColorBrush x:Key="WarnBrush" Color="#A15C07"/>
+        <SolidColorBrush x:Key="MachineBrush" Color="#FFF6DB"/>
+        <SolidColorBrush x:Key="MachineBorderBrush" Color="#F0D58C"/>
+        <SolidColorBrush x:Key="NoticeBrush" Color="#FFF1D6"/>
+        <SolidColorBrush x:Key="NoticeBorderBrush" Color="#EBC57A"/>
 
         <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
 
@@ -153,6 +157,10 @@
                     <Setter Property="Background" Value="{StaticResource MissingBrush}"/>
                     <Setter Property="BorderBrush" Value="{StaticResource MissingBorderBrush}"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding IsMachineTranslated}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource MachineBrush}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource MachineBorderBrush}"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -160,6 +168,95 @@
             <Setter Property="Background" Value="{StaticResource MissingBrush}"/>
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Padding" Value="7,1"/>
+        </Style>
+
+        <Style x:Key="MachinePill" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource MachineBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource MachineBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="7,0"/>
+        </Style>
+
+        <!-- Toolbar toggle (Problems) -->
+        <Style x:Key="ToolbarToggle" TargetType="ToggleButton">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}"/>
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Problems list -->
+        <Style x:Key="IssueItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="28,4,12,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SeverityDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Height" Value="7"/>
+            <Setter Property="Fill" Value="{StaticResource MutedBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Error">
+                    <Setter Property="Fill" Value="{StaticResource DangerBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Fill" Value="{StaticResource WarnBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <!-- Language chips -->

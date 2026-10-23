@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using ResxStudio.Models;
@@ -45,7 +46,13 @@ public sealed class LanguageViewModel : ObservableObject
     public string Id { get; }
     public string? CultureCode { get; }
     public bool IsNeutral => CultureCode == null;
-    public ResxDocument Document { get; }
+
+    /// <summary>Replaced after a merge, when the file is re-read from disk.</summary>
+    public ResxDocument Document { get; set; }
+
+    /// <summary>The string values as they were on disk at the last load or save. Used for merging.</summary>
+    public Dictionary<string, string> Baseline { get; set; } = new(StringComparer.Ordinal);
+
     public string EnglishName { get; }
     public string NativeName { get; }
     public string FileName => Path.GetFileName(Document.FilePath);

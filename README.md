@@ -32,6 +32,54 @@ and the app reopens the last file you used.
 - **Rose** means missing text. **Amber keys** exist in a translation but not in the
   default file, so there's no fallback for them.
 
+## Autofill missing translations (Ctrl+T)
+
+Fills empty cells using the free MyMemory API. Pick the languages and which keys
+(current view, all, or the selected one), then press Start.
+
+- **Free limits:** 5,000 characters a day, or 50,000 if you enter an email address.
+  The window estimates how many days a job takes. When the limit runs out, everything
+  translated so far is kept; run it again the next day and it continues with what's left.
+- **Protected tokens:** `{0}` style placeholders, `{name}` / `{{name}}` / `${name}`,
+  HTML tags and entities, Razor (`@Model.Name`, `@(...)`), printf (`%s`, `%1$d`), URLs,
+  escapes like `\n`, and names from the "Never translate" list are swapped for markers
+  before sending and put back afterwards. If the service damages a marker, only the text
+  between the tokens is translated so the tokens are copied over untouched.
+- **Line breaks and outer spaces** are kept; long texts are split by sentence to fit the
+  500-byte request limit. Identical texts are translated once.
+- **Review:** filled cells turn amber and show "Auto-translated". Editing a cell or
+  clicking "Mark reviewed" clears it. Use the "Auto-translated, to review" filter to go
+  through them. The marks are remembered between sessions (in %AppData%, not in your files).
+- Text is sent to MyMemory (translated.net), a public service. Nothing is written to
+  your .resx files until you save.
+
+## Problems panel
+
+Click **Problems** in the toolbar. Grouped by type, click a row to jump to that cell:
+
+| Type | Severity |
+| --- | --- |
+| Lost or changed placeholders (`{0}`, tags, Razor...) compared with the default text | Error / warning |
+| Malformed format strings (unbalanced braces, `{x}` in a `{0}`-style string) | Error |
+| Missing from the default file (no fallback) | Error |
+| Duplicate keys in a file, and keys differing only by case | Warning |
+| Different leading or trailing spacing | Note |
+| Same as the default text | Note |
+| Missing translations | Note |
+
+The editor panel shows the same checks under each box as you type. Saving with broken or
+malformed placeholders asks first, because `string.Format` throws on them at runtime.
+
+## Changes made outside the editor
+
+ResxStudio remembers a hash of each file when it loads or saves it.
+
+- When you switch back to the window, a banner tells you if a file changed on disk
+  (git pull, Visual Studio, another editor) with a Reload button.
+- Before saving, changed files are detected and you choose:
+  **Merge** keeps the other changes and applies only the keys you edited (if both sides
+  changed the same key, yours wins and you get a list), or **Overwrite**.
+
 | Shortcut | Action |
 | --- | --- |
 | Ctrl+O | Open |
@@ -40,6 +88,7 @@ and the app reopens the last file you used.
 | Ctrl+N | Add key (prefilled with the current section) |
 | Ctrl+R | Rename key in every file |
 | Del (in grid) | Delete key from every file |
+| Ctrl+T | Autofill missing translations |
 | F8 | Next untranslated key, cursor in the empty box |
 | F5 | Reload from disk |
 
@@ -66,6 +115,12 @@ Models/ResxDocument.cs          load, apply edits, save one .resx
 Models/ResourceSetLocator.cs    find the default file and all language files
 ViewModels/MainViewModel.cs     filtering, stats, add/rename/delete, save
 ViewModels/EntryViewModel.cs    one key with values per language (indexer binding)
+Models/ResxMerger.cs            key-level merge when a file changed on disk
+Services/TokenProtector.cs      find, mask and restore placeholders and names
+Services/TranslationChecks.cs   placeholder, format string and spacing checks
+Services/MyMemoryClient.cs      MyMemory API calls, quota detection
+Services/MachineTranslator.cs   line, chunk and fallback handling around the API
+Views/AutofillDialog.xaml(.cs)  autofill window
 MainWindow.xaml(.cs)            layout; language columns are built in code
 App.xaml                        colors and control styles
 ```
