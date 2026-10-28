@@ -4,8 +4,8 @@
         Title="{Binding WindowTitle}"
         Width="1480" Height="900" MinWidth="1000" MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource CanvasBrush}"
-        Foreground="{StaticResource InkBrush}"
+        Background="{DynamicResource CanvasBrush}"
+        Foreground="{DynamicResource InkBrush}"
         FontFamily="Segoe UI" FontSize="13"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
@@ -27,12 +27,13 @@
     <DockPanel>
 
         <!-- Toolbar -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="14,10">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="14,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
@@ -40,7 +41,7 @@
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Open…" Command="{Binding OpenCommand}" ToolTip="Open a .resx file and its languages (Ctrl+O)"/>
                     <Button Content="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" ToolTip="Save every changed file (Ctrl+S)"/>
-                    <Rectangle Width="1" Fill="{StaticResource LineBrush}" Margin="6,2,12,2"/>
+                    <Rectangle Width="1" Fill="{DynamicResource LineBrush}" Margin="6,2,12,2"/>
                     <Button Content="Add key" Command="{Binding AddKeyCommand}" ToolTip="Add a key to the default file (Ctrl+N)"/>
                     <Button Content="Add language" Command="{Binding AddLanguageCommand}" ToolTip="Create a new language file next to the others"/>
                     <Button Content="Autofill missing…" Command="{Binding AutofillCommand}" ToolTip="Fill missing translations with free machine translation (Ctrl+T)"/>
@@ -52,7 +53,7 @@
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                              KeyDown="OnSearchKeyDown" VerticalContentAlignment="Center"/>
                     <TextBlock Text="Search keys and text (Ctrl+F)"
-                               Foreground="{StaticResource MutedBrush}" Margin="10,0,0,0"
+                               Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0"
                                VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding SearchText, Converter={StaticResource EmptyToVisible}}"/>
                 </Grid>
@@ -64,15 +65,18 @@
                 <ToggleButton Grid.Column="3" Style="{StaticResource ToolbarToggle}"
                               Content="{Binding ProblemsButtonText}" IsChecked="{Binding ShowProblems}"
                               ToolTip="Placeholder, format and key problems"/>
+
+                <Button Grid.Column="4" Content="Settings" Margin="10,0,0,0" Click="OnOpenSettings"
+                        ToolTip="Appearance and other settings (Ctrl+,)"/>
             </Grid>
         </Border>
 
         <!-- Language chips: progress per language, click to show or hide a column -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="14,6"
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="14,6"
                 Visibility="{Binding IsProjectLoaded, Converter={StaticResource BoolToVis}}">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Left" Text="Languages" Foreground="{StaticResource MutedBrush}"
+                <TextBlock DockPanel.Dock="Left" Text="Languages" Foreground="{DynamicResource MutedBrush}"
                            VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <ItemsControl ItemsSource="{Binding Languages}" Focusable="False">
                     <ItemsControl.ItemsPanel>
@@ -87,9 +91,9 @@
                                 <StackPanel MinWidth="112">
                                     <DockPanel>
                                         <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressText}"
-                                                   Foreground="{StaticResource MutedBrush}" Margin="12,0,0,0"/>
+                                                   Foreground="{DynamicResource MutedBrush}" Margin="12,0,0,0"/>
                                         <Ellipse DockPanel.Dock="Left" Width="6" Height="6" Margin="0,0,6,0"
-                                                 Fill="{StaticResource AccentBrush}" VerticalAlignment="Center"
+                                                 Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center"
                                                  ToolTip="Unsaved changes"
                                                  Visibility="{Binding IsDirty, Converter={StaticResource BoolToVis}}"/>
                                         <TextBlock Text="{Binding ChipName}" FontWeight="SemiBold"/>
@@ -105,8 +109,8 @@
         </Border>
 
         <!-- Banner: a file changed outside the editor -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource NoticeBrush}"
-                BorderBrush="{StaticResource NoticeBorderBrush}" BorderThickness="0,0,0,1" Padding="14,8"
+        <Border DockPanel.Dock="Top" Background="{DynamicResource NoticeBrush}"
+                BorderBrush="{DynamicResource NoticeBorderBrush}" BorderThickness="0,0,0,1" Padding="14,8"
                 Visibility="{Binding ExternalChangeMessage, Converter={StaticResource NotNullToVis}}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="16,0,0,0">
@@ -118,24 +122,24 @@
         </Border>
 
         <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="14,5">
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0" Padding="14,5">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right" Text="{Binding SaveStateText}">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding HasChanges}" Value="True">
-                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-                <TextBlock DockPanel.Dock="Left" Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" Margin="0,0,24,0"/>
-                <TextBlock Text="{Binding FolderText}" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+                <TextBlock DockPanel.Dock="Left" Text="{Binding StatusText}" Foreground="{DynamicResource MutedBrush}" Margin="0,0,24,0"/>
+                <TextBlock Text="{Binding FolderText}" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
         </Border>
 
@@ -150,9 +154,9 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Sections -->
-                <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                     <DockPanel>
-                        <TextBlock DockPanel.Dock="Top" Text="Sections" Foreground="{StaticResource MutedBrush}" Margin="14,12,14,6"/>
+                        <TextBlock DockPanel.Dock="Top" Text="Sections" Foreground="{DynamicResource MutedBrush}" Margin="14,12,14,6"/>
                         <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
                                  Style="{StaticResource SideList}" ItemContainerStyle="{StaticResource SideListItem}">
                             <ListBox.ItemTemplate>
@@ -162,9 +166,9 @@
                                                 VerticalAlignment="Center"
                                                 ToolTip="Keys with missing text in the visible languages"
                                                 Visibility="{Binding HasMissing, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="{Binding MissingCount}" Foreground="{StaticResource DangerBrush}" FontSize="11"/>
+                                            <TextBlock Text="{Binding MissingCount}" Foreground="{DynamicResource DangerBrush}" FontSize="11"/>
                                         </Border>
-                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" Foreground="{StaticResource MutedBrush}"/>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" Foreground="{DynamicResource MutedBrush}"/>
                                         <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"/>
                                     </DockPanel>
                                 </DataTemplate>
@@ -202,15 +206,15 @@
 
                     <GridSplitter x:Name="ProblemsSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                  Background="{StaticResource LineBrush}" Visibility="Collapsed"/>
+                                  Background="{DynamicResource LineBrush}" Visibility="Collapsed"/>
 
-                    <DockPanel Grid.Row="2" Background="{StaticResource SurfaceBrush}">
-                        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,7">
+                    <DockPanel Grid.Row="2" Background="{DynamicResource SurfaceBrush}">
+                        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,7">
                             <DockPanel>
                                 <Button DockPanel.Dock="Right" Content="Close" Style="{StaticResource LinkButton}"
                                         Command="{Binding HideProblemsCommand}"/>
                                 <TextBlock Text="Problems" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding ProblemSummary}" Foreground="{StaticResource MutedBrush}" Margin="12,0,0,0"/>
+                                <TextBlock Text="{Binding ProblemSummary}" Foreground="{DynamicResource MutedBrush}" Margin="12,0,0,0"/>
                             </DockPanel>
                         </Border>
 
@@ -220,14 +224,14 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                            <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
                                 <ListBox ItemsSource="{Binding ProblemCategories}" SelectedItem="{Binding SelectedCategory}"
                                          Style="{StaticResource SideList}" ItemContainerStyle="{StaticResource SideListItem}">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <DockPanel>
                                                 <Ellipse DockPanel.Dock="Left" Style="{StaticResource SeverityDot}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat=N0}" Foreground="{StaticResource MutedBrush}" Margin="8,0,0,0"/>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Count, StringFormat=N0}" Foreground="{DynamicResource MutedBrush}" Margin="8,0,0,0"/>
                                                 <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
                                             </DockPanel>
                                         </DataTemplate>
@@ -248,7 +252,7 @@
                                                        FontFamily="{StaticResource MonoFont}" FontSize="12" TextTrimming="CharacterEllipsis"
                                                        VerticalAlignment="Center"/>
                                             <TextBlock DockPanel.Dock="Left" Text="{Binding Location}" Width="150" Margin="0,0,12,0"
-                                                       Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
+                                                       Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis"/>
                                         </DockPanel>
                                     </DataTemplate>
@@ -259,13 +263,13 @@
                 </Grid>
 
                 <GridSplitter Grid.Column="2" Width="5" HorizontalAlignment="Stretch"
-                              ResizeBehavior="PreviousAndNext" Background="{StaticResource LineBrush}"/>
+                              ResizeBehavior="PreviousAndNext" Background="{DynamicResource LineBrush}"/>
 
                 <!-- Editor panel for the selected key -->
-                <Border Grid.Column="3" Background="{StaticResource SurfaceBrush}">
+                <Border Grid.Column="3" Background="{DynamicResource SurfaceBrush}">
                     <Grid>
                         <TextBlock Text="Select a key to edit its text in every language."
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center"
+                                   Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32"
                                    Visibility="{Binding SelectedEntry, Converter={StaticResource NullToVis}}"/>
 
@@ -273,7 +277,7 @@
                             <StackPanel DockPanel.Dock="Top" Margin="18,16,18,12">
                                 <TextBlock Text="{Binding SelectedEntry.Key}" FontFamily="{StaticResource MonoFont}"
                                            FontSize="14" TextWrapping="Wrap"/>
-                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{StaticResource WarnBrush}"
+                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="{DynamicResource WarnBrush}"
                                            Text="This key is missing from the default file, so the app has no fallback text for it. Add default text or rename it to the key you meant."
                                            Visibility="{Binding SelectedEntry.IsOrphan, Converter={StaticResource BoolToVis}}"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -281,7 +285,7 @@
                                     <Button Content="Delete" Command="{Binding DeleteKeyCommand}" Style="{StaticResource DangerButton}"/>
                                 </StackPanel>
                             </StackPanel>
-                            <Rectangle DockPanel.Dock="Top" Height="1" Fill="{StaticResource LineBrush}"/>
+                            <Rectangle DockPanel.Dock="Top" Height="1" Fill="{DynamicResource LineBrush}"/>
 
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <ItemsControl x:Name="CellsList" ItemsSource="{Binding SelectedCells}" Margin="18,14,18,18" Focusable="False">
@@ -303,12 +307,12 @@
                                                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
                                                         <Border Style="{StaticResource MissingPill}"
                                                                 Visibility="{Binding IsMissing, Converter={StaticResource BoolToVis}}">
-                                                            <TextBlock Text="Missing" Foreground="{StaticResource DangerBrush}" FontSize="11"/>
+                                                            <TextBlock Text="Missing" Foreground="{DynamicResource DangerBrush}" FontSize="11"/>
                                                         </Border>
                                                         <Border Style="{StaticResource MachinePill}"
                                                                 ToolTip="Filled by machine translation. Edit it or mark it reviewed."
                                                                 Visibility="{Binding IsMachineTranslated, Converter={StaticResource BoolToVis}}">
-                                                            <TextBlock Text="Auto-translated" Foreground="{StaticResource WarnBrush}" FontSize="11"/>
+                                                            <TextBlock Text="Auto-translated" Foreground="{DynamicResource WarnBrush}" FontSize="11"/>
                                                         </Border>
                                                     </StackPanel>
                                                 </DockPanel>
@@ -318,10 +322,10 @@
                                                            Visibility="{Binding HasProblem, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock.Style>
                                                         <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource WarnBrush}"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding ProblemIsError}" Value="True">
-                                                                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                                                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
@@ -340,22 +344,22 @@
             <!-- Empty state -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
                         Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVis}}">
-                <Border Background="{StaticResource NoticeBrush}" BorderBrush="{StaticResource NoticeBorderBrush}"
+                <Border Background="{DynamicResource NoticeBrush}" BorderBrush="{DynamicResource NoticeBorderBrush}"
                         BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,24"
                         Visibility="{Binding StartupNotice, Converter={StaticResource NotNullToVis}}">
                     <TextBlock Text="{Binding StartupNotice}" TextWrapping="Wrap"/>
                 </Border>
                 <TextBlock Text="Open your default .resx file" FontSize="22" FontWeight="SemiBold" TextAlignment="Center"/>
-                <TextBlock Margin="0,10,0,22" TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                <TextBlock Margin="0,10,0,22" TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource MutedBrush}"
                            Text="Pick a file like Translations.resx and every language file next to it, such as Translations_bg.resx, opens side by side. You can also drop the file onto this window."/>
                 <Button Content="Open .resx file…" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}"
                         HorizontalAlignment="Center" Padding="18,8" Margin="0"/>
-                <TextBlock Margin="0,18,0,0" TextAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                <TextBlock Margin="0,18,0,0" TextAlignment="Center" FontSize="12" Foreground="{DynamicResource MutedBrush}"
                            Text="Tip: hold Shift while starting ResxStudio to skip reopening the last file."/>
             </StackPanel>
 
             <!-- Loading -->
-            <Border Background="{StaticResource CanvasBrush}"
+            <Border Background="{DynamicResource CanvasBrush}"
                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="280">
                     <TextBlock Text="{Binding LoadingText}" FontSize="16" TextAlignment="Center" Margin="0,0,0,12"/>

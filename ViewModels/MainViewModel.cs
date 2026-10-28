@@ -18,7 +18,7 @@ namespace ResxStudio.ViewModels;
 public sealed class MainViewModel : ObservableObject
 {
     private readonly IDialogService _dialogs;
-    private readonly AppSettings _settings = AppSettings.Load();
+    private readonly AppSettings _settings = AppSettings.Current;
     private readonly DispatcherTimer _searchTimer;
     private readonly DispatcherTimer _statsTimer;
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;

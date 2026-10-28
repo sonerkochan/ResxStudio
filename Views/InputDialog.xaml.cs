@@ -46,7 +46,7 @@ public partial class InputDialog : Window
         MessageText.Text = check.Message;
         // Don't shout about an empty box before the user has typed anything.
         var showAsError = !check.IsValid && _touched;
-        MessageText.Foreground = (Brush)FindResource(showAsError ? "DangerBrush" : "MutedBrush");
+        MessageText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, showAsError ? "DangerBrush" : "MutedBrush");
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

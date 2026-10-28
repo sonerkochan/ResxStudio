@@ -26,6 +26,9 @@ public partial class App : Application
         };
         UiWatchdog.Start(Dispatcher);
 
+        // Before any window exists, so the first frame already has the right colours.
+        ThemeService.Initialize(AppSettings.Current);
+
         // The window is created here rather than with StartupUri so that if it fails,
         // the app reports it and exits instead of running on without a window.
         try
@@ -43,6 +46,12 @@ public partial class App : Application
                 "ResxStudio", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        ThemeService.Shutdown();
+        base.OnExit(e);
     }
 
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

@@ -138,7 +138,7 @@ public partial class MainWindow : Window, IDialogService
         foreach (var emptyValue in new object?[] { null, "" })
         {
             var missing = new DataTrigger { Binding = new Binding($"[{languageId}]"), Value = emptyValue };
-            missing.Setters.Add(new Setter(Control.BackgroundProperty, FindResource("MissingBrush")));
+            missing.Setters.Add(new Setter(Control.BackgroundProperty, new DynamicResourceExtension("MissingBrush")));
             style.Triggers.Add(missing);
         }
 
@@ -147,7 +147,7 @@ public partial class MainWindow : Window, IDialogService
             Binding = new Binding($"{nameof(EntryViewModel.MachineTranslated)}[{languageId}]"),
             Value = true,
         };
-        machine.Setters.Add(new Setter(Control.BackgroundProperty, FindResource("MachineBrush")));
+        machine.Setters.Add(new Setter(Control.BackgroundProperty, new DynamicResourceExtension("MachineBrush")));
         style.Triggers.Add(machine);
         return style;
     }
@@ -224,8 +224,18 @@ public partial class MainWindow : Window, IDialogService
 
     // ---- Keyboard and drag-and-drop ----------------------------------------------------------
 
+    private void OnOpenSettings(object sender, RoutedEventArgs e)
+        => new SettingsDialog { Owner = this }.ShowDialog();
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            OnOpenSettings(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             SearchBox.Focus();

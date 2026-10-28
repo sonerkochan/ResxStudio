@@ -53,6 +53,12 @@ Fills empty cells using the free MyMemory API. Pick the languages and which keys
 - Text is sent to MyMemory (translated.net), a public service. Nothing is written to
   your .resx files until you save.
 
+## Light and dark mode
+
+Open **Settings** (toolbar, or Ctrl+,), pick **Light**, **Dark** or **Use system setting**, and click **Apply**. It takes effect
+immediately, with no restart, and is remembered in `settings.json`. With "Use system setting", the app switches when Windows does.
+Colours live in `App.xaml`; the dark values are in `Services/ThemeService.cs`.
+
 ## Problems panel
 
 Click **Problems** in the toolbar. Grouped by type, click a row to jump to that cell:

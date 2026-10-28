@@ -8,6 +8,12 @@ namespace ResxStudio.Services;
 /// <summary>Small JSON settings file in %AppData%\ResxStudio.</summary>
 public sealed class AppSettings
 {
+    /// <summary>The one settings object shared by the whole app, so every part saves the same values.</summary>
+    public static AppSettings Current { get; } = Load();
+
+    /// <summary>Colour theme: "System" (follow Windows), "Light" or "Dark".</summary>
+    public string Theme { get; set; } = "System";
+
     public string? LastFile { get; set; }
 
     /// <summary>

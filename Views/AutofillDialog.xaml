@@ -4,7 +4,7 @@
         Title="Fill missing translations"
         Width="640" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource InkBrush}"
+        Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource InkBrush}"
         FontFamily="Segoe UI" FontSize="13" UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display">
     <StackPanel Margin="22,20,22,18">
@@ -34,21 +34,21 @@
                 <TextBox x:Name="EmailBox" Style="{StaticResource Field}"/>
             </StackPanel>
         </Grid>
-        <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12"
+        <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12"
                    Text="MyMemory's free limit is 5,000 characters a day, or 50,000 with an email address. The address is only sent to MyMemory."/>
 
         <TextBlock Text="Never translate" FontWeight="SemiBold" Margin="0,14,0,6"/>
         <TextBox x:Name="TermsBox" Style="{StaticResource Field}" AcceptsReturn="True" TextWrapping="Wrap"
                  Height="72" VerticalScrollBarVisibility="Auto"/>
-        <TextBlock Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12"
+        <TextBlock Margin="0,6,0,0" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12"
                    Text="One name per line, such as product and company names. Placeholders like {0}, HTML tags, Razor expressions, URLs and escapes like \n are always kept exactly as they are."/>
 
-        <Border Margin="0,16,0,0" Padding="12,10" Background="{StaticResource CanvasBrush}" CornerRadius="6">
+        <Border Margin="0,16,0,0" Padding="12,10" Background="{DynamicResource CanvasBrush}" CornerRadius="6">
             <TextBlock x:Name="EstimateText" TextWrapping="Wrap"/>
         </Border>
 
         <ProgressBar x:Name="RunProgress" Style="{StaticResource ThinProgress}" Height="4" Margin="0,14,0,0"/>
-        <TextBlock x:Name="StatusText" Margin="0,8,0,0" MinHeight="18" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/>
+        <TextBlock x:Name="StatusText" Margin="0,8,0,0" MinHeight="18" TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}"/>
         <TextBox x:Name="LogBox" Style="{StaticResource Field}" IsReadOnly="True" Height="96" Margin="0,8,0,0"
                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontSize="12" Visibility="Collapsed"/>
 
@@ -57,7 +57,7 @@
                 <Button x:Name="CloseButton" Content="Close"/>
                 <Button x:Name="StartButton" Content="Start" Style="{StaticResource PrimaryButton}" MinWidth="90" Margin="0"/>
             </StackPanel>
-            <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,16,0"
+            <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,16,0"
                        Text="Text is sent to MyMemory (translated.net), a public translation service. Results are marked for review."/>
         </DockPanel>
     </StackPanel>
